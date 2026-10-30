@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-import time, os, sys, glob, gzip
+import time, os, sys, glob, gzip, subprocess
 import multiprocessing as mp
 import pandas as pd
 from Bio import bgzf
@@ -41,12 +41,44 @@ def proc_longshot(CB, options):
 		fh.write(err_msg.decode('utf-8'))
 
 	#---compression---
-	cmd = options.bcftools + ' view -Oz -o ' + vcf_pref + '.vcf.gz ' + vcf_pref + '.vcf &> /dev/null'
-	os.system(cmd)
+	# vcf = vcf_pref + '.vcf'
+	# vcf_gz = vcf_pref + '.vcf.gz'
 
-	#---indexing---
-	cmd = options.bcftools + ' index ' + vcf_pref + '.vcf.gz &> /dev/null'
-	os.system(cmd)
+	## Fixed
+	compress_cmd = [
+	    options.bcftools, 'view', '-Oz',
+	    '-o', vcf_pref + '.vcf.gz', vcf_pref + '.vcf'
+	    ]
+
+	with open(vcf_pref + '.compress.log', 'w') as log:
+	    result = subprocess.run(
+	        compress_cmd,
+	        stdout=log,
+	        stderr=subprocess.STDOUT
+	    )
+
+	if result.returncode != 0:
+	    raise RuntimeError(
+	        f"VCF compression failed (exit code {result.returncode}): {vcf_pref + '.vcf'}"
+	    )
+
+	if not os.path.isfile(vcf_pref + '.vcf.gz') or os.path.getsize(vcf_pref + '.vcf.gz') == 0:
+	    raise RuntimeError(f"Compressed VCF is missing or empty: {vcf_pref + '.vcf.gz'}")
+
+	# Indexing
+	index_cmd = [options.bcftools, 'index', vcf_pref + '.vcf.gz']
+
+	with open(vcf_pref + '.index.log', 'w') as log:
+	    result = subprocess.run(
+	        index_cmd,
+	        stdout=log,
+	        stderr=subprocess.STDOUT
+	    )
+
+	if result.returncode != 0:
+	    raise RuntimeError(
+	        f"VCF indexing failed (exit code {result.returncode}): {vcf_pref + '.vcf.gz'}"
+	    )
 
 	#---remove temp files---
 	if not options.keep_meta:
@@ -334,79 +366,79 @@ if __name__ == "__main__":
 	#===get params===
 	parser = OptionParser()
 
-	parser.add_option("-d",           dest = "o_dir",      nargs = 1, default = "scNanoGPS_res",
+	parser.add_option("-d",           dest = "o_dir",     default = "scNanoGPS_res",
 	                  help = "Output directory name. "
 	                         "Default: scNanoGPS_res")
-	parser.add_option("--tmp_dir",    dest = "tmp_dir",    nargs = 1, default = "tmp",
+	parser.add_option("--tmp_dir",    dest = "tmp_dir",    default = "tmp",
 	                  help = "Temporary folder name. "
 	                         "Default: tmp")
-	parser.add_option("--CB_file",  dest = "CB_file",    nargs = 1, default = "filtered_barcode_list.txt",
+	parser.add_option("--CB_file",  dest = "CB_file",    default = "filtered_barcode_list.txt",
                           help = "File name for filtered barcode list. "
                                  "Default: filtered_barcode_list.txt")
-	parser.add_option("--ref_genome", dest = "ref_genome", nargs = 1, default = None,
+	parser.add_option("--ref_genome", dest = "ref_genome", default = None,
 	                   help = "* Required ! "
 	                          "File for reference genome.")
-	parser.add_option("--longshot_min_cov", dest = "longshot_min_cov", nargs = 1, default = "2",
+	parser.add_option("--longshot_min_cov", dest = "longshot_min_cov", default = "2",
                           help = "Minimal coverage for longshot. "
                                  "Default: 2", type = "string")
-	parser.add_option("--longshot_min_alt_count", dest = "longshot_min_alt_count", nargs = 1, default = "2",
+	parser.add_option("--longshot_min_alt_count", dest = "longshot_min_alt_count", default = "2",
                           help = "Minimal alternative count for longshot. "
                                  "Default: 2", type = "string")
-	parser.add_option("--longshot_o", dest = "longshot_o", nargs = 1, default = "longshot.output",
+	parser.add_option("--longshot_o", dest = "longshot_o", default = "longshot.output",
                           help = "Prefix of LongShot output VCF file. "
                                  "Default: longshot.output")
-	parser.add_option("-o",           dest = "o_name",     nargs = 1, default = "SNV_matrix.vcf.gz",
+	parser.add_option("-o",           dest = "o_name",     default = "SNV_matrix.vcf.gz",
 	                  help = "Result SNV matrix file name. Must be ended with .vcf.gz. "
 	                         "Default: SNV_matrix.vcf.gz")
-	parser.add_option("--log",        dest = "log_f_name", nargs = 1, default = "logs/reporter_SNV.log.txt",
+	parser.add_option("--log",        dest = "log_f_name", default = "logs/reporter_SNV.log.txt",
 	                  help = "Log file name. "
 	                         "Default: logs/reporter_SNV.log.txt")
-	parser.add_option("--o_snv_l",    dest = "o_snv_l",    nargs = 1, default = "filtered_SNV_position_list.tsv.gz",
+	parser.add_option("--o_snv_l",    dest = "o_snv_l",    default = "filtered_SNV_position_list.tsv.gz",
                           help = "Filtered SNVs position list. "
                                  "Default: filtered_SNV_position_list.tsv.gz")
-	parser.add_option("--o_snv_dp",   dest = "o_snv_dp",   nargs = 1, default = "SNV_dp_matrix.tsv.gz",
+	parser.add_option("--o_snv_dp",   dest = "o_snv_dp",   default = "SNV_dp_matrix.tsv.gz",
                           help = "SNVs depth matrix. "
                                  "Default: SNV_dp_matrix.tsv.gz")
-	parser.add_option("-t",           dest = "ncores",     nargs = 1, default = 1,
+	parser.add_option("-t",           dest = "ncores",     default = 1,
 	                  help = "Number of cores for program running. "
 	                         "Default: 1", type = "int")
-	parser.add_option("--samtools",   dest = "samtools",   nargs = 1, default = "samtools",
+	parser.add_option("--samtools",   dest = "samtools",   default = "samtools",
                           help = "Path to samtools. "
                                  "Default: samtools")
-	parser.add_option("--bcftools",   dest = "bcftools",   nargs = 1, default = "bcftools",
+	parser.add_option("--bcftools",   dest = "bcftools",   default = "bcftools",
                           help = "Path to bcftools. "
                                  "Default: bcftools")
-	parser.add_option("--tabix",      dest = "tabix",      nargs = 1, default = "tabix",
+	parser.add_option("--tabix",      dest = "tabix",      default = "tabix",
                           help = "Path to tabix. "
                                  "Default: tabix")
-	parser.add_option("--longshot",   dest = "longshot",   nargs = 1, default = "longshot",
+	parser.add_option("--longshot",   dest = "longshot",   default = "longshot",
 	                  help = "Path to longshot. "
 	                         "Default: None")
-	parser.add_option("--prevalence", dest = "prevalence", nargs = 1, default = 0.01,
+	parser.add_option("--prevalence", dest = "prevalence", default = 0.01,
                           help = "SNV prevalence rate. "
                                  "Default: 0.01", type = "float")
-	parser.add_option("--min_read_quality", dest = "min_read_quality", nargs = 1, default = "0",
+	parser.add_option("--min_read_quality", dest = "min_read_quality", default = "0",
                           help = "Minimal read quality. "
                                  "Default: 0", type = "string")
-	parser.add_option("--annovar",    dest = "annovar",    nargs = 1, default = None,
+	parser.add_option("--annovar",    dest = "annovar",  default = None,
                           help = "Path to Annovar. "
                                  "Default: None")
-	parser.add_option("--annovar_db", dest = "annovar_db", nargs = 1, default = None,
+	parser.add_option("--annovar_db", dest = "annovar_db", default = None,
                           help = "Path to Annovar database. "
                                  "Default: None")
-	parser.add_option("--annovar_gv", dest = "annovar_gv", nargs = 1, default = "hg38",
+	parser.add_option("--annovar_gv", dest = "annovar_gv", default = "hg38",
                           help = "Annovar database genome version. "
                                  "Default: hg38")
-	parser.add_option("--annovar_protocol", dest = "annovar_protocol", nargs = 1, default = "refGene,cytoBand,gnomad30_genome,avsnp150,dbnsfp42c",
+	parser.add_option("--annovar_protocol", dest = "annovar_protocol", default = "refGene,cytoBand,gnomad30_genome,avsnp150,dbnsfp42c",
                           help = "Protocols of Annovar database. "
                                  "Default: refGene,cytoBand,gnomad30_genome,avsnp150,dbnsfp42c")
-	parser.add_option("--annovar_operation", dest = "annovar_operation", nargs = 1, default = "gx,r,f,f,f",
+	parser.add_option("--annovar_operation", dest = "annovar_operation", default = "gx,r,f,f,f",
                           help = "Operation of Annovar database. "
                                  "Default: gx,r,f,f,f")
-	parser.add_option("--annovar_xref", dest = "annovar_xref", nargs = 1, default = None,
+	parser.add_option("--annovar_xref", dest = "annovar_xref", default = None,
                           help = "Path to Omim xref. "
                                  "Default: None")
-	parser.add_option("--keep_meta",    dest = "keep_meta",    nargs = 1, default = None,
+	parser.add_option("--keep_meta",    dest = "keep_meta",   default = None,
                           help = "Keep meta files. "
                                  "Default: None")
 	options, arguments = parser.parse_args()

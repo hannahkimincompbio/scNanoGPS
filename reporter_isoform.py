@@ -159,15 +159,17 @@ if __name__ == "__main__":
 	parser.add_option("--samtools",   dest = "samtools",   nargs = 1, default = "samtools",
 	                  help = "Path to samtools. "
 	                         "Default: samtools")
-	parser.add_option("--isoquant",   dest = "isoquant",   nargs = 1, default = "isoquant.py",
-	                  help = "Program name of IsoQuant. "
-	                         "Default: isoquant.py")
+	parser.add_option("--isoquant",   dest = "isoquant",   nargs = 1, default = "isoquant",
+	                  help = "Path to IsoQuant. "
+	                         "Default: isoquant") ## fixed
 	parser.add_option("--isoquant_d", dest = "isoquant_d", nargs = 1, default = "scNanoGPS_res/IsoQuant_res",
 	                  help = "IsoQuant output directory. "
 	                         "Default: scNanoGPS_res/IsoQuant_res")
-	parser.add_option("--isoquant_o", dest = "isoquant_o",   nargs = 1, default = 'OUT/OUT.transcript_model_grouped_counts.tsv',
-	                  help = "Suffix of IsoQuant output file. "
-	                         "Default: OUT/OUT.transcript_model_grouped_counts.tsv")
+	parser.add_option("--isoquant_o", dest = "isoquant_o",   nargs = 1, default = 'OUT/OUT.transcript_grouped_tag_RG_counts.tsv',
+	                  help = "Suffix of IsoQuant output file; \
+                        was OUT/OUT.transcript_model_grouped_counts.tsv in isoQua)nt v3.7.0, \
+                        now OUT/OUT.transcript_grouped_tag_RG_counts.tsv in isoQuant v4.0.0 "
+	                         "Default: OUT/OUT.transcript_grouped_tag_RG_counts.tsv") ## fixed
 
 	options, arguments = parser.parse_args()
 
@@ -228,25 +230,39 @@ if __name__ == "__main__":
 	#===load CB list===
 	bam_list, CB_list = load_CB(options)
 
+	## FIXED
 	#===Extracting header===
-		#===extract header from first bam===
+	if not CB_list:
+		print("Error: no barcodes found; cannot extract BAM header.")
+		sys.exit(1)
+	
+	#===extract header from first bam===
 	cmd = options.samtools + " view -H " + os.path.join(options.tmp_dir, CB_list[0]) + options.bam_suf
-	hdr, sm_str = "", os.getcwd().split(os.sep)[-1] 
+	hdr, sm_str = "", os.getcwd().split(os.sep)[-1]
+
 	code_msg, out_msg, err_msg = curator_io.sys_run(cmd)
-	if err_msg.decode("utf-8") == "":
-		hdr = out_msg.decode("utf-8")
-	else:
-		print("Something wrong doing \"" + cmd + "\"\n")
-		sys.exit()
+
+	if code_msg != 0:
+	    print("Error running \"" + cmd + "\"")
+	    print(err_msg.decode("utf-8", errors="replace"))
+	    sys.exit(1)
+
+	hdr = out_msg.decode("utf-8")
+
+	if not hdr.strip():
+	    print("Error: samtools returned an empty BAM header.")
+	    sys.exit(1)
 
 	with open(options.hdr_f, "wt") as oh:
-		for line in hdr.splitlines():
-			#===remove @PG===
-			if line.startswith('@PG'):
-				continue
-			oh.write(line + "\n")
-		#===Add RG to header===
-		oh.write("\n".join(["@RG\tID:" + CB + "\tSM:" + sm_str for CB in CB_list]) + "\n")
+	    for line in hdr.splitlines():
+	        # Remove @PG records
+	        if line.startswith("@PG"):
+	            continue
+	        oh.write(line + "\n")
+
+	    # Add read groups
+	    oh.write("\n".join(["@RG\tID:" + CB + "\tSM:" + sm_str for CB in CB_list]) + "\n")
+	##
 
 	#===add RG, extract bam, generate to master bam file===
 	#===Add RG into bam===
@@ -262,11 +278,12 @@ if __name__ == "__main__":
 
 	#===Run IsoQuant===
 	isoquant_time = time.time()
-	cmd = "python3 " + options.isoquant + " -d nanopore --complete_genedb" + \
+    ## fixed. IsoQuant uses a "smart" default (--counts_format default) that changes the output based on the size of your data to save disk space.
+	cmd = options.isoquant + " -d nanopore --complete_genedb" + \
 	      " -r " + options.ref_genome + \
 	      " -g " + options.gtf + \
 	      " -t " + str(options.ncores) + \
-	      " --read_group tag:RG" + \
+	      " --read_group tag:RG" + " --counts_format matrix mtx" + \
 	      " --bam " + os.path.join(options.isoquant_d, "merged.curated.minimap2.bam") + \
 	      " -o " + options.isoquant_d
 	os.system(cmd)
@@ -283,7 +300,7 @@ if __name__ == "__main__":
 
 	#===generate isoform matrix===
 	res_df = pd.read_csv(os.path.join(options.isoquant_d, options.isoquant_o), header = 0, sep = '\t')
-	res_df = res_df.rename(columns={'#feature_id': 'transcript_id'})
+	res_df = res_df.rename(columns={'gene_id': 'transcript_id'}) ## fixed
 	res_df = res_df.loc[res_df['transcript_id'].isin(options.tx_mapping.keys()), :].copy()
 	res_df['transcript_name'] = [options.tx_mapping[tid] for tid in res_df['transcript_id'].values]
 
