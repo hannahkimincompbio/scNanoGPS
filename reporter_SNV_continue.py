@@ -547,6 +547,9 @@ if __name__ == "__main__":
 	import numpy as np
 
 	print("\nTime stamp: " + time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime()), "\n", flush = True)
+
+	start_time = time.time()
+
 	#===load CB list===
 	print("Loading CB list...", flush = True)
 	bam_list, CB_list = [], []
@@ -564,8 +567,6 @@ if __name__ == "__main__":
 					break
 				CB_list.append(CB_name)
 		bam_list = [x + ".curated.minimap2.bam" for x in CB_list]
-
-	start_time = time.time()
 
 	print("\nMerge Longshot result...", flush = True)
 	merge_longshot(CB_list, options)
