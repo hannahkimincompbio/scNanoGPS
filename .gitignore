@@ -1,5 +1,5 @@
 
-__pycache__/
+pycache/
 *.py[cod]
 *$py.class
 .DS_Store

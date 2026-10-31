@@ -16,77 +16,81 @@ def poolcontext(*args, **kwargs):
 	yield pool
 	pool.terminate()
 
-def proc_longshot(CB, options):
-	bam_pref = os.path.join(options.tmp_dir, CB)
-	vcf_pref = os.path.join(options.tmp_dir, options.longshot_o + '.' + CB)
+def proc_longshot(CB, options): ## fixed. Index file was not being generated for one, but it was also expecting the output in a .tbi format, which is not the default output of `bcftools index`.
+    bam_pref = os.path.join(options.tmp_dir, CB)
+    vcf_pref = os.path.join(options.tmp_dir, options.longshot_o + '.' + CB)
+    vcf_file = vcf_pref + '.vcf'
+    vcf_gz_file = vcf_pref + '.vcf.gz'
+    vcf_tbi_file = vcf_gz_file + '.tbi'
 
-	#===skip if file exist===
-	if(os.path.isfile(vcf_pref + '.vcf') or os.path.isfile(vcf_pref + '.vcf.gz')):
-		print("Skip " + CB + ": " + vcf_pref + ".vcf exists")
-		return
+    # === skip if result already exists ===
+    if os.path.isfile(vcf_gz_file):
+        print(f"Skip {CB}: {vcf_gz_file} exists")
+        return
 
-	longshot_time = time.time()
-	print('Longshot: Calling SNV in ' + CB + ' ...', flush = True)
-	cmd = options.longshot + ' -F' + \
-	      ' --bam ' + bam_pref + '.curated.minimap2.bam' + \
-	      ' --ref ' + options.ref_genome + \
-	      ' --min_cov ' + options.longshot_min_cov + \
-	      ' --min_alt_count ' + options.longshot_min_alt_count + \
-	      ' --out ' + vcf_pref + '.vcf' + \
-	      ' --sample_id ' + CB
+    longshot_time = time.time()
+    print(f'Longshot: Calling SNV in {CB} ...', flush=True)
+    
+    # 1. Run Longshot
+    cmd = (f"{options.longshot} -F "
+           f"--bam {bam_pref}.curated.minimap2.bam "
+           f"--ref {options.ref_genome} "
+           f"--min_cov {options.longshot_min_cov} "
+           f"--min_alt_count {options.longshot_min_alt_count} "
+           f"--out {vcf_file} "
+           f"--sample_id {CB}")
 
-	code_msg, out_msg, err_msg = curator_io.sys_run(cmd)
-	with open(vcf_pref + '.log', 'wt') as fh:
-		fh.write(out_msg.decode('utf-8'))
-		fh.write(err_msg.decode('utf-8'))
+    code_msg, out_msg, err_msg = curator_io.sys_run(cmd)
+    
+    # Log output
+    with open(vcf_pref + '.log', 'wt') as fh:
+        fh.write(out_msg.decode('utf-8', errors='replace'))
+        fh.write(err_msg.decode('utf-8', errors='replace'))
 
-	#---compression---
-	# vcf = vcf_pref + '.vcf'
-	# vcf_gz = vcf_pref + '.vcf.gz'
+    # CRITICAL: Check if longshot actually succeeded
+    if code_msg != 0:
+        raise RuntimeError(f"Longshot failed for {CB} with exit code {code_msg}")
+    
+    if not os.path.isfile(vcf_file) or os.path.getsize(vcf_file) == 0:
+        raise RuntimeError(f"Longshot produced empty or missing VCF: {vcf_file}")
 
-	## Fixed
-	compress_cmd = [
-	    options.bcftools, 'view', '-Oz',
-	    '-o', vcf_pref + '.vcf.gz', vcf_pref + '.vcf'
-	    ]
+    # 2. Compression
+    compress_cmd = [
+        options.bcftools, 'view', '-Oz',
+        '-o', vcf_gz_file, vcf_file
+    ]
 
-	with open(vcf_pref + '.compress.log', 'w') as log:
-	    result = subprocess.run(
-	        compress_cmd,
-	        stdout=log,
-	        stderr=subprocess.STDOUT
-	    )
+    with open(vcf_pref + '.compress.log', 'w') as log:
+        result = subprocess.run(compress_cmd, stdout=log, stderr=subprocess.STDOUT)
 
-	if result.returncode != 0:
-	    raise RuntimeError(
-	        f"VCF compression failed (exit code {result.returncode}): {vcf_pref + '.vcf'}"
-	    )
+    if result.returncode != 0:
+        raise RuntimeError(f"VCF compression failed (code {result.returncode}): {vcf_file}")
 
-	if not os.path.isfile(vcf_pref + '.vcf.gz') or os.path.getsize(vcf_pref + '.vcf.gz') == 0:
-	    raise RuntimeError(f"Compressed VCF is missing or empty: {vcf_pref + '.vcf.gz'}")
+    if not os.path.isfile(vcf_gz_file) or os.path.getsize(vcf_gz_file) == 0:
+        raise RuntimeError(f"Compressed VCF is missing or empty: {vcf_gz_file}")
 
-	# Indexing
-	index_cmd = [options.bcftools, 'index', vcf_pref + '.vcf.gz']
+    # 3. Indexing
+    # FIX: Use '-t' to force a .tbi index
+    index_cmd = [options.bcftools, 'index', '-t', vcf_gz_file]
 
-	with open(vcf_pref + '.index.log', 'w') as log:
-	    result = subprocess.run(
-	        index_cmd,
-	        stdout=log,
-	        stderr=subprocess.STDOUT
-	    )
+    with open(vcf_pref + '.index.log', 'w') as log:
+        result = subprocess.run(index_cmd, stdout=log, stderr=subprocess.STDOUT)
 
-	if result.returncode != 0:
-	    raise RuntimeError(
-	        f"VCF indexing failed (exit code {result.returncode}): {vcf_pref + '.vcf.gz'}"
-	    )
+    if result.returncode != 0:
+        raise RuntimeError(f"VCF indexing failed (code {result.returncode}): {vcf_gz_file}")
 
-	#---remove temp files---
-	if not options.keep_meta:
-		cmd = 'rm ' + vcf_pref + '.vcf'
-		os.system(cmd)
+    if not os.path.isfile(vcf_tbi_file):
+        raise RuntimeError(f"Indexing succeeded but {vcf_tbi_file} was not created")
 
-	hours, minutes, seconds = misc.get_time_elapse(longshot_time)
-	print("Longshot spend %d:%d:%.2f on %s" % (hours, minutes, seconds, CB), flush = True)
+    # === remove temp files ===
+    if not options.keep_meta:
+        try:
+            os.remove(vcf_file)
+        except OSError:
+            pass
+
+    hours, minutes, seconds = misc.get_time_elapse(longshot_time)
+    print(f"Longshot spent {hours}:{minutes}:{seconds:.2f} on {CB}", flush=True)
 
 def filter_by_prevalence(options):
 	counter_raw, counter_pass = 0, 0
