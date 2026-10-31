@@ -163,8 +163,13 @@ def merge_longshot(CB_list, options):
         print("Skip merging longshot result: " + final_filtered + " exists")
         return
 
-    vcf_files = sorted(glob.glob(os.path.join(
-        options.tmp_dir, options.longshot_o + ".*.vcf.gz")))
+    vcf_files = sorted([
+        os.path.join(options.tmp_dir, f)
+        for f in os.listdir(options.tmp_dir)
+        if f.startswith(options.longshot_o)
+        and f.endswith(".vcf.gz")
+        and os.path.isfile(os.path.join(options.tmp_dir, f))
+        ])
     if not vcf_files:
         raise FileNotFoundError(f"No Longshot VCF files found in {options.tmp_dir} with prefix {options.longshot_o}")
 
@@ -584,7 +589,13 @@ if __name__ == "__main__":
     print("Loading CB list...", flush = True)
     bam_list, CB_list = [], []
     if not options.CB_file:
-        bam_list = glob.glob(os.path.join(options.tmp_dir, "*.curated.minimap2.bam"))
+        bam_list = [
+        os.path.join(options.tmp_dir, f)
+        for f in os.listdir(options.tmp_dir)
+        if f.endswith(".curated.minimap2.bam")
+        and os.path.isfile(os.path.join(options.tmp_dir, f))
+        ]
+        print(f"Found {len(bam_list)} curated BAM files.")
         for bam_f in bam_list:
             split_f_name = bam_f.split('/')
             BC = split_f_name[len(split_f_name) - 1].split('.')
@@ -599,7 +610,7 @@ if __name__ == "__main__":
         bam_list = [x + ".curated.minimap2.bam" for x in CB_list]
 
 
-    print("\nMerge Longshot result...", flush = True)
+    print("\nMerge Longshot result... CB_list length: " + str(len(CB_list)), flush = True)
     merge_longshot(CB_list, options)
     print("\nTime stamp: " + time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime()) + "\n", flush = True)
     hours, minutes, seconds = misc.get_time_elapse(start_time)
