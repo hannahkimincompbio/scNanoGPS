@@ -45,12 +45,39 @@ def proc_longshot(CB, options): ## fixed. Index file was not being generated for
     vcf_gz_file = vcf_pref + '.vcf.gz'
     vcf_tbi_file = vcf_gz_file + '.tbi'
 
+    longshot_time = time.time()
+
     # === skip if result already exists ===
     if os.path.isfile(vcf_gz_file):
-        print(f"Skip {CB}: {vcf_gz_file} exists")
+        print(f"Skip {CB}: {vcf_gz_file} exists. Checking its index availability...")
+        if os.path.isfile(vcf_tbi_file):
+            print(f"Skip {CB}: {vcf_tbi_file} exists. No need to run index again.")
+            return
+        print(f"{CB}: {vcf_gz_file} does not exist. Get index...")
+        # 3. Indexing
+        # FIX: Use '-t' to force a .tbi index
+        index_cmd = [options.bcftools, 'index', '-t', vcf_gz_file]
+
+        with open(vcf_pref + '.index.log', 'w') as log:
+            result = subprocess.run(index_cmd, stdout=log, stderr=subprocess.STDOUT)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"VCF indexing failed (code {result.returncode}): {vcf_gz_file}")
+
+        if not os.path.isfile(vcf_tbi_file):
+            raise RuntimeError(f"Indexing succeeded but {vcf_tbi_file} was not created")
+
+        # === remove temp files ===
+        if not options.keep_meta:
+            try:
+                os.remove(vcf_file)
+            except OSError:
+                pass
+            
+        hours, minutes, seconds = misc.get_time_elapse(longshot_time)
+        print(f"Longshot spent {hours}:{minutes}:{seconds:.2f} on {CB}", flush=True)
         return
 
-    longshot_time = time.time()
     print(f'Longshot: Calling SNV in {CB} ...', flush=True)
     
     # 1. Run Longshot
