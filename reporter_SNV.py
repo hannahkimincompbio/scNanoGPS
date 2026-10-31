@@ -138,10 +138,15 @@ def merge_longshot(CB_list, options):
 		print("Skip merging longshot result: " + os.path.join(options.o_dir, options.o_pref) + ".filtered.vcf.gz exists")
 		return
 
-	cmd = 'ls ' + os.path.join(options.tmp_dir, options.longshot_o) + \
-	      '.*.vcf.gz | split -l 500 - ' + \
-	      os.path.join(options.tmp_dir, 'splitted_vcf_list_')
-	os.system(cmd)
+	vcf_files = sorted(glob.glob(os.path.join(options.tmp_dir, options.longshot_o + '.*.vcf.gz')))
+	if not vcf_files:
+		print(f"Warning: No longshot VCF files found in {options.tmp_dir} with prefix {options.longshot_o}")
+		return
+	chunk_size = 500
+	for i in range(0, len(vcf_files), chunk_size):
+		chunk = vcf_files[i:i + chunk_size]
+		with open(os.path.join(options.tmp_dir, f'splitted_vcf_list_{i // chunk_size}'), 'w') as f:
+			f.write('\n'.join(chunk) + '\n')
 
 	counter = 0
 	f_list = glob.glob(os.path.join(options.tmp_dir, 'splitted_vcf_list_*'))
@@ -156,8 +161,9 @@ def merge_longshot(CB_list, options):
 		os.system(cmd)
 
 	print("\nGenerating final matrix...")
-	cmd = 'ls ' + os.path.join(options.tmp_dir, 'splitted_vcf_list_*.merge.vcf.gz') + ' > ' + os.path.join(options.tmp_dir, 'final_vcf_list')
-	os.system(cmd)
+	merge_vcfs = sorted(glob.glob(os.path.join(options.tmp_dir, 'splitted_vcf_list_*.merge.vcf.gz')))
+	with open(os.path.join(options.tmp_dir, 'final_vcf_list'), 'w') as f:
+		f.write('\n'.join(merge_vcfs) + '\n')
 
 	cmd = options.bcftools + ' merge -0 -l ' + os.path.join(options.tmp_dir, 'final_vcf_list') + ' -Ov -o ' + os.path.join(options.o_dir, options.o_pref) + '.raw.vcf.gz'
 	os.system(cmd)
