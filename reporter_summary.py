@@ -15,7 +15,7 @@ parser.add_option("-d",            dest = "o_dir",       nargs = 1, default = "s
 parser.add_option("--tmp_dir",     dest = "tmp_dir",     nargs = 1, default = "tmp",
                   help = "Temporary folder name. "
                          "Default: tmp")
-parser.add_option("--scanner_log", dest = "scanner_log", nargs = 1, default = "scanner.log.txt",
+parser.add_option("--scanner_log", dest = "scanner_log", nargs = 1, default = "logs/scanner.log.txt",
                   help = "Scanner log file name. "
                          "Default: scanner.log.txt")
 parser.add_option("--bc_f",        dest = "bc_f",        nargs = 1, default = "barcode_list.tsv.gz",
@@ -78,14 +78,14 @@ if not os.path.isdir(options.tmp_dir):
 	print("\nTemporary directory is not exist: " + options.tmp_dir + "\n")
 	print(options.tmp_dir)
 	termination = True
-if not os.path.isfile(os.path.join('logs', options.scanner_log)):
-	print("\nCannot find scanner log file at: " + str(os.path.join('logs', options.scanner_log)))
+if not os.path.isfile(options.scanner_log):
+	print("\nCannot find scanner log file at: " + str(options.scanner_log))
 	termination = True
 if not os.path.isfile(os.path.join(options.o_dir, options.bc_f)):
 	print("\nCannot find barcode list file at: " + str(os.path.join(options.o_dir, options.bc_f)))
 	termination = True
-if not os.path.isfile(os.path.join(options.o_dir, options.read_len_f)):
-	print("\nCannot find read length file at: " + str(os.path.join(options.o_dir, options.read_len_f)))
+if not os.path.isfile(options.read_len_f):
+	print("\nCannot find read length file at: " + str(options.read_len_f))
 	print("Please run read_length_profiler.py first\n")
 	termination = True
 if not os.path.isfile(os.path.join(options.o_dir, options.CB_file)):
@@ -113,7 +113,7 @@ if termination:
 
 #===parse scanner log===
 print("\n\nParsing scanner log ...", flush = True)
-fh = open(os.path.join('logs', options.scanner_log), "rt")
+fh = open(options.scanner_log, "rt")
 total_read_no, pass_read_no, detecting_rate = 0, 0, 0
 while True:
 	line = fh.readline()
@@ -140,7 +140,7 @@ print("Done.\n", flush = True)
 
 #===calc mean read length===
 print("Computing read length ...", flush = True)
-df = pd.read_csv(os.path.join(options.o_dir, options.read_len_f), header = None, sep = '\t', compression = 'gzip')
+df = pd.read_csv(options.read_len_f, header = None, sep = '\t', compression = 'gzip')
 
 len_median = df.iloc[:, 0].median()
 len_mean   = round(df.iloc[:, 0].mean(), 2)
