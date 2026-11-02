@@ -245,12 +245,35 @@ median_umi_no = round(np.median(umi_per_cell), 2)
 
 #===qualimap===
 print("Calling Qualimap...", flush = True)
-cmd = options.qualimap + " rnaseq -bam " + \
-      os.path.join(options.tmp_dir, "master.bam") + " -gtf " + options.gtf + " " + options.qualimap_param
-os.system(cmd)
+cmd = [
+    options.qualimap,
+    "rnaseq",
+    "-bam", os.path.join(options.tmp_dir, "master.bam"),
+    "-gtf", options.gtf,
+]
+
+if options.qualimap_param:
+    cmd.extend(options.qualimap_param.split())
+
+print("Running:", " ".join(cmd), flush=True)
+
+result = subprocess.run(cmd, check=False)
+
+if result.returncode != 0:
+    sys.exit(f"Qualimap failed with exit code {result.returncode}")
+
+qc_file = os.path.join(
+    options.tmp_dir,
+    "master_rnaseq_qc",
+    "rnaseq_qc_results.txt"
+)
+
+if not os.path.isfile(qc_file):
+    sys.exit(f"Qualimap did not generate the expected file: {qc_file}")
+
+fh = open(qc_file, "rt")
 
 exonic_ratio, intronic_ratio, intergenic_ratio, overlapping_exon_ratio = 0, 0, 0, 0
-fh = open(os.path.join(options.tmp_dir, "master_rnaseq_qc", "rnaseq_qc_results.txt"), "rt")
 while True:
 	line = fh.readline()
 	if not line:
